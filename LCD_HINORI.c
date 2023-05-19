@@ -583,14 +583,7 @@ void LCD_INVERT_OVERVOLTAGE(void){
 	_overvoltage_flag = ~_overvoltage_flag;
 }
 
-void LCD_Set_Voltage_In(uint16_t _val){
-	if(_val == _voltage_in)
-		return;
-	_voltage_in = _val;
-	_wattage = _voltage_in * _amp_in / 100;
-	LCD_VOLTAGE_IN();
-	LCD_WAT_POWER();
-}
+
 
 void LCD_Set_Mode(uint8_t _mode_spi){
 	
@@ -621,6 +614,15 @@ void LCD_Set_Mode(uint8_t _mode_spi){
 	else 
 		LCD_NORMAL_LOADING_MODE();
 	
+}
+
+void LCD_Set_Voltage_In(uint16_t _val){
+	if(_val == _voltage_in)
+		return;
+	_voltage_in = _val;
+	_wattage = _voltage_in * _amp_in / 100;
+	LCD_VOLTAGE_IN();
+	LCD_WAT_POWER();
 }
 
 void LCD_Set_Voltage_Out1(uint16_t _val){
