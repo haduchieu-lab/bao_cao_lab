@@ -1,0 +1,174 @@
+#include "main.h"
+#include <stdio.h>
+#include "stm32f4xx.h"
+#include "stm32f4xx_gpio.h"
+#include "stm32f4xx_rcc.h"
+#include "stm32f4xx_spi.h"
+#include "stm32f4xx_usart.h"
+
+
+
+#define ws GPIO_Pin_12
+#define sck GPIO_Pin_13
+#define sd GPIO_Pin_15
+void I2S_config(void);
+void I2S_config(void)
+{
+    RCC_ITConfig(RCC_IT_PLLI2SRDY, ENABLE);
+    RCC_ClearITPendingBit(RCC_IT_PLLI2SRDY);
+    RCC_GetFlagStatus(RCC_FLAG_PLLI2SRDY);
+    RCC_I2SCLKConfig(RCC_I2S2CLKSource_PLLI2S);
+    RCC_PLLI2SCmd(ENABLE);///quan trọng: có config này mới đọc được dữ liệu
+
+    RCC_APB1PeriphClockCmd(RCC_APB1Periph_SPI2, ENABLE);
+    RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOB, ENABLE);
+    RCC_PLLI2SCmd(ENABLE);
+
+    GPIO_InitTypeDef GPIO_InitStructure;
+
+    GPIO_PinAFConfig(GPIOB,GPIO_PinSource12, GPIO_AF_SPI2);
+    GPIO_PinAFConfig(GPIOB,GPIO_PinSource13, GPIO_AF_SPI2);
+    GPIO_PinAFConfig(GPIOB,GPIO_PinSource15, GPIO_AF_SPI2);
+    GPIO_StructInit(&GPIO_InitStructure);
+
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_12 | GPIO_Pin_13 | GPIO_Pin_15;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF;
+    GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
+    GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(GPIOB, &GPIO_InitStructure);
+
+
+    I2S_InitTypeDef I2S_InitStructure;
+
+
+    I2S_InitStructure.I2S_AudioFreq = I2S_AudioFreq_44k;
+    I2S_InitStructure.I2S_Standard = I2S_Standard_Phillips;
+    I2S_InitStructure.I2S_MCLKOutput = I2S_MCLKOutput_Disable;
+    I2S_InitStructure.I2S_CPOL = I2S_CPOL_Low;
+    I2S_InitStructure.I2S_DataFormat = I2S_DataFormat_16b;
+    I2S_InitStructure.I2S_Mode = I2S_Mode_MasterRx;
+
+    I2S_Init(SPI2, &I2S_InitStructure);
+    SPI_I2S_ITConfig (SPI2, SPI_I2S_IT_RXNE, ENABLE);
+    SPI_DMACmd(SPI2, SPI_I2S_DMAReq_Tx, ENABLE);
+    /* Enable the I2S2 */
+    I2S_Cmd(SPI2, ENABLE);
+
+}
+
+void usart_cfg(){
+    RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOA, ENABLE); /// Cấp clock cho GPIOA
+  RCC_APB1PeriphClockCmd(RCC_APB1Periph_USART2, ENABLE); /// Cấp clock cho USART2
+
+    GPIO_PinAFConfig(GPIOA,GPIO_PinSource2,GPIO_AF_USART2);
+  GPIO_PinAFConfig(GPIOA,GPIO_PinSource3,GPIO_AF_USART2);
+
+  /// Chọn chân PA2 và PA3 làm đầu vào USART2.
+  /// Tham khảo bảng Table 9. Alternate function mapping/datasheet
+
+  GPIO_InitTypeDef GPIO_struct;
+  GPIO_struct.GPIO_Pin = GPIO_Pin_2 | GPIO_Pin_3;
+  GPIO_struct.GPIO_Mode = GPIO_Mode_AF;
+  GPIO_struct.GPIO_PuPd = GPIO_PuPd_NOPULL;
+  GPIO_struct.GPIO_Speed = GPIO_Speed_50MHz;
+  /// Cấu hình hai chân hoạt động ở chế độ AF, không kéo, tốc độ 50MHz
+
+  GPIO_Init(GPIOA,&GPIO_struct);
+
+  USART_InitTypeDef USART_struct;
+//  USART_struct.USART_BaudRate = BAUD_115200; /// baudra = 115200
+  USART_struct.USART_BaudRate = 9600; /// baudrate = 9600
+  USART_struct.USART_Mode = USART_Mode_Tx | USART_Mode_Rx; /// chọn chế độ RX
+  USART_struct.USART_HardwareFlowControl = USART_HardwareFlowControl_None; /// Tắt mode Hardwareflowcontrol
+  USART_struct.USART_Parity = USART_Parity_No; /// không có bit chẵn lẻ
+  USART_struct.USART_StopBits = USART_StopBits_1; /// 1 bit dừng
+  USART_struct.USART_WordLength = USART_WordLength_8b; /// chế độ khung dữ liệu 8 bit
+  USART_Init(USART2,&USART_struct);
+
+//  USART_ClearFlag(USART2, USART_FLAG_RXNE);  /// xóa cờ lần đầu
+//  USART_ITConfig(USART2,USART_IT_RXNE,ENABLE); /// cho phép ngắt cờ RXNE khi thanh ghi đệm RX không rỗng
+//  NVIC_EnableIRQ(USART2_IRQn);
+
+  USART_Cmd(USART2,ENABLE);
+}
+void send_char(uint8_t c){ /// Hàm gửi một kí tự ra COM
+//  USART_ClearFlag(USART2,USART_FLAG_TXE);
+  USART_SendData(USART2,c);
+  while(USART_GetFlagStatus(USART2,USART_FLAG_TXE) == RESET); /// chờ đến khi cờ TXE được set -> đã chuyển xong một frame
+}
+
+void printf_string(uint8_t *str){ /// hàm đưa một xâu kí tự ra COM
+  while((*(str)) != NULL){
+    send_char(*(str++));
+  }
+  while (USART_GetFlagStatus(USART2,USART_FLAG_TC)==RESET); /// Chờ đến khi cờ TC được set -> kết thúc quá trình truyền
+}
+
+char convert_int_to_char(uint8_t n){ /// hàm chuyển đổi số ra kiểu char
+   return n+48;
+}
+char convert_char_to_int(char n){ /// hàm chuyển đổi số ra kiểu char
+   return n-48;
+}
+void printf_num(int64_t num){ /// hàm đưa một số ra COM
+  if(num < 0){
+    send_char("-");
+  }
+  uint8_t rev_num[20];
+  int i = 0;
+  while(num != 0 ){
+    rev_num[i++] = num%10;
+    num/=10;
+  }
+  i--;
+  for(i;i>=0;i--){
+    send_char(convert_int_to_char(rev_num[i]));
+  }
+  while (USART_GetFlagStatus(USART2,USART_FLAG_TC)==RESET);
+}
+void USART2_SendChar(char ch)///in ký tự
+{
+    while (!(USART2->SR & USART_SR_TXE));
+    USART2->DR = ch;
+}
+void Delay_ms(uint16_t time)
+{
+    uint32_t time_n=time*12000;
+	while(time_n!=0){time_n--;}
+}
+
+void SPI2_IRQHandler(void)///hàm đọc của anh Thao
+ {
+    // Receiving data
+
+    if(SPI_GetITStatus(SPI2, SPI_I2S_IT_RXNE) == SET) {
+        uint16_t data = SPI2->DR;
+
+        printf_num(data);
+        Delay_ms(1000);
+    }
+}
+
+void main()
+{
+    usart_cfg();
+    I2S_config();
+    while(1)
+    {
+
+        uint32_t data;
+        clock();
+       data = SPI_I2S_ReceiveData(SPI2);
+        printf_string("gia tri:");
+       printf_num(data);
+       //printf_num(516);
+       Delay_ms(1000);
+       printf_string("\n");
+        //read_data();
+
+
+}}
+
+
+
